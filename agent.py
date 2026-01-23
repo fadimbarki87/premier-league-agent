@@ -235,6 +235,9 @@ def parse_question_to_intent(question: str) -> dict:
     }
 
     r = requests.post(url, headers=headers, json=payload, timeout=30)
+    print("AZURE PARSER STATUS:", r.status_code)
+    print("AZURE PARSER BODY:", r.text[:500])
+
 
     if not r.ok:
       print("AZURE parse_question_to_intent FAILED")
@@ -484,6 +487,9 @@ def formulate_answer(question: str, result: str) -> str:
     }
 
     r = requests.post(url, headers=headers, json=payload, timeout=30)
+    print("AZURE NLG STATUS:", r.status_code)
+    print("AZURE NLG BODY:", r.text[:500])
+
 
     if not r.ok:
       print("AZURE formulate_answer FAILED")
