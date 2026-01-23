@@ -32,7 +32,8 @@ CSV_PATH = os.path.join(BASE_DIR, "premier_league_players.csv")
 # ============================================================
 
 def make_demo_db():
-    conn = sqlite3.connect(":memory:")
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
+
     c = conn.cursor()
 
     c.execute("""
