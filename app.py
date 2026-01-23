@@ -6,18 +6,15 @@ from agent import make_demo_db, ask
 
 app = FastAPI()
 
-# ✅ CORS FIX — THIS IS THE KEY
+# ✅ CORS — OPEN AND CORRECT
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://fadimbarki87.github.io"
-    ],
+    allow_origins=["*"],   # IMPORTANT: allow all for now
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["*"],   # includes OPTIONS
     allow_headers=["*"],
 )
 
-# Initialize DB once
 conn = make_demo_db()
 
 class Question(BaseModel):
@@ -29,5 +26,4 @@ def root():
 
 @app.post("/ask")
 def ask_agent(q: Question):
-    answer = ask(q.question, conn)
-    return {"answer": answer}
+    return {"answer": ask(q.question, conn)}
