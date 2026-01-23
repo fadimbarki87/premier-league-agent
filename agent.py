@@ -22,7 +22,10 @@ import re
 import json
 import sqlite3
 import requests
-import csv   # <<< ADDED, nothing else >>>
+import csv
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CSV_PATH = os.path.join(BASE_DIR, "premier_league_players.csv")
 
 # ============================================================
 # DEMO DB (club_aliases table)
@@ -57,7 +60,11 @@ def make_demo_db():
     # ONLY CHANGE: LOAD PLAYERS FROM LOCAL CSV
     # ========================================================
 
-    with open("premier_league_players.csv", newline="", encoding="utf-8") as f:
+    if not os.path.exists(CSV_PATH):
+        raise RuntimeError(f"CSV not found at {CSV_PATH}")
+
+    with open(CSV_PATH, newline="", encoding="utf-8") as f:
+
         reader = csv.DictReader(f)
         for row in reader:
             c.execute(
