@@ -1,21 +1,29 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import traceback
 
 from agent import make_demo_db, ask
 
 app = FastAPI()
 
-# ✅ CORS — OPEN AND CORRECT
+# CORS (correct)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # IMPORTANT: allow all for now
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],   # includes OPTIONS
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
-conn = make_demo_db()
+# Initialize DB safely
+try:
+    conn = make_demo_db()
+    print("Database initialized successfully")
+except Exception as e:
+    print("DATABASE INIT FAILED")
+    traceback.print_exc()
+    raise e
 
 class Question(BaseModel):
     question: str
@@ -26,4 +34,9 @@ def root():
 
 @app.post("/ask")
 def ask_agent(q: Question):
-    return {"answer": ask(q.question, conn)}
+    try:
+        answer = ask(q.question, conn)
+        return {"answer": answer}
+    except Exception:
+        traceback.print_exc()
+        return {"answer": "Internal server error. Check logs."}
