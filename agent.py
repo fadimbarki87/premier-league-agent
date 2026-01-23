@@ -235,8 +235,16 @@ def parse_question_to_intent(question: str) -> dict:
     }
 
     r = requests.post(url, headers=headers, json=payload, timeout=30)
-    r.raise_for_status()
-    return json.loads(r.json()["choices"][0]["message"]["content"])
+
+    if not r.ok:
+      print("AZURE parse_question_to_intent FAILED")
+      print("status:", r.status_code)
+      print("body:", r.text[:1000])
+      # return a supported=false intent instead of crashing your whole API
+      return {"supported": False}
+    data = r.json()
+    return json.loads(data["choices"][0]["message"]["content"])
+
 
 
 # ============================================================
@@ -476,8 +484,14 @@ def formulate_answer(question: str, result: str) -> str:
     }
 
     r = requests.post(url, headers=headers, json=payload, timeout=30)
-    r.raise_for_status()
+
+    if not r.ok:
+      print("AZURE formulate_answer FAILED")
+      print("status:", r.status_code)
+      print("body:", r.text[:1000])
+      return result if result else "No results."
     return r.json()["choices"][0]["message"]["content"].strip()
+
 
 
 # ============================================================
