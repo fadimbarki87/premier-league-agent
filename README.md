@@ -11,14 +11,14 @@ The system is designed to avoid hallucinations by separating language understand
 
 The application follows a strict multi-step pipeline:
 
-1. **Intent Parsing**  
-   Azure OpenAI converts a user question into a constrained JSON intent based on a predefined schema.
+### Intent Parsing
+Azure OpenAI converts a user question into a constrained JSON intent based on a predefined schema.
 
-2. **Deterministic Execution**  
-   The intent is executed against a local SQLite database containing Premier League player data loaded from a CSV file.
+### Deterministic Execution
+The intent is executed against a local SQLite database containing Premier League player data loaded from a CSV file.
 
-3. **Answer Formulation**  
-   A second Azure OpenAI call rewrites the deterministic result into a concise natural-language response without adding new facts.
+### Answer Formulation
+A second Azure OpenAI call rewrites the deterministic result into a concise natural-language response without adding new facts.
 
 ---
 
