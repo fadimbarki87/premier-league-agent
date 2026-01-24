@@ -144,13 +144,19 @@ def fetch_player_facts(conn, name):
 # Azure config (DO NOT INLINE KEYS)
 # ============================================================
 
-AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT", "https://fadiazureopenai1231.openai.azure.com")
-AZURE_OPENAI_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4.1-mini")
-AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
-AZURE_OPENAI_API_KEY = "6GhBPphrFrGNM3fNBbjtamGYHOWIqkXI3T97LYeWrIVDKtADepAUJQQJ99BHACHYHv6XJ3w3AAABACOGpTir"
+AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
+AZURE_OPENAI_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION")
+AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
 
-if not AZURE_OPENAI_API_KEY:
-    raise RuntimeError("AZURE_OPENAI_API_KEY not set in environment")
+if not all([
+    AZURE_OPENAI_ENDPOINT,
+    AZURE_OPENAI_DEPLOYMENT,
+    AZURE_OPENAI_API_VERSION,
+    AZURE_OPENAI_API_KEY,
+]):
+    raise RuntimeError("Azure OpenAI environment variables are not fully set")
+
 
 # ============================================================
 # EVERYTHING BELOW IS 100% UNCHANGED
