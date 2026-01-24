@@ -104,7 +104,8 @@ AZURE NLG STATUS: 200
 This confirms that environment variables are loaded correctly and Azure OpenAI is being used.
 
 ## Note 
-The first question may take up to ~50 seconds due to cost-controlled request routing and cold-start behavior
+The first request may take up to ~50 seconds due to intentional cold-start behavior and cost-controlled request routing.
+
 
 ---
 
