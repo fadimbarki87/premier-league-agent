@@ -591,6 +591,7 @@ def formulate_answer(question: str, result: str) -> str:
         "You are a response rewriter.\n"
         "You receive the user's question and a deterministic database result.\n"
         "Your job is to produce a natural-language final answer.\n"
+        "ALWAYS answer in the SAME LANGUAGE as the user's question.\n"
         "Do not add new facts. Do not guess missing info.\n"
         "If result is 'No results.', say that clearly.\n"
         "Avoid incorrect phrasing like '<name> is islam'. Use '<name>’s religion is Islam'.\n"
