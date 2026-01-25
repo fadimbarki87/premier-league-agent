@@ -1,20 +1,6 @@
 
-# ============================================================
-# ALL-IN-ONE CELL — OPTION B + CLUB ALIAS TABLE (PROMPT STAYS SMALL)
-# LLM PARSER → CANONICAL INTENT (RAW USER VALUE) → DETERMINISTIC EXECUTION
-#
-# Changes vs your version (kept design, extended safely):
-# 1) Multi-field LOOKUP: parser can output field like "goals+assists"
-#    and executor formats both values.
-# 2) "Which religion has Salah" always becomes LOOKUP (prompt rule).
-# 3) "players not muslim" includes players with religion = NULL (intentional):
-#    In SELECT matching, op "!=" treats NULL as True.
-# 4) API key is read from env var, do NOT hardcode secrets in code.
-#
-# ONLY ADDITION REQUESTED NOW:
-# - After deterministic execution, call Azure OpenAI again to
-#   read the question + result and formulate a natural answer.
-# ============================================================
+
+
 
 from __future__ import annotations
 import os
@@ -23,13 +9,11 @@ import json
 import sqlite3
 import requests
 import csv
-
+DEBUG = False
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(BASE_DIR, "premier_league_players.csv")
 
-# ============================================================
-# DEMO DB (club_aliases table)
-# ============================================================
+
 
 def make_demo_db():
     conn = sqlite3.connect(":memory:", check_same_thread=False)
@@ -57,9 +41,7 @@ def make_demo_db():
     )
     """)
 
-    # ========================================================
-    # ONLY CHANGE: LOAD PLAYERS FROM LOCAL CSV
-    # ========================================================
+   
 
     if not os.path.exists(CSV_PATH):
         raise RuntimeError(f"CSV not found at {CSV_PATH}")
@@ -118,9 +100,7 @@ def make_demo_db():
     return conn
 
 
-# ============================================================
-# DATA ACCESS
-# ============================================================
+
 
 FIELDS = (
     "full_name","club","league","hair_color",
@@ -140,9 +120,7 @@ def fetch_player_facts(conn, name):
     return dict(zip(FIELDS, r)) if r else {}
 
 
-# ============================================================
-# Azure config (DO NOT INLINE KEYS)
-# ============================================================
+
 
 AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
 AZURE_OPENAI_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT")
@@ -158,15 +136,11 @@ if not all([
     raise RuntimeError("Azure OpenAI environment variables are not fully set")
 
 
-# ============================================================
-# EVERYTHING BELOW IS 100% UNCHANGED
-# ============================================================
 
 
 
-# ============================================================
-# Parser: NL → canonical intent JSON (prompt stays small)
-# ============================================================
+
+
 
 def parse_question_to_intent(question: str) -> dict:
     url = (
@@ -206,6 +180,20 @@ def parse_question_to_intent(question: str) -> dict:
         "- IMPORTANT: Multi-field lookup is allowed. If user asks for multiple attributes of ONE player,\n"
         " set field to a '+'-joined string, e.g. 'goals+assists'.\n"
         "- IMPORTANT: For questions like 'players not muslim', use select with a filter religion != islam.\n"
+
+     
+        "- IMPORTANT: For ranking questions like 'top scorers', use intent=topk.\n"
+        "- IMPORTANT: topk supports metric 'goals', 'assists', or 'goals+assists'.\n"
+        "- IMPORTANT: topk supports filters the same way as SELECT.\n"
+        "- IMPORTANT: Default k=50 if user does not specify.\n"
+        "- IMPORTANT: For questions like 'who is better X or Y', use intent=compare.\n"
+        "- IMPORTANT: compare may include more than two players.\n"
+        "- IMPORTANT: If compare metrics is omitted, default to goals+assists.\n"
+        "- IMPORTANT: topk may include a \"return\" list of fields to return per player.\n"
+
+      
+
+
         "- Output JSON ONLY, no extra text.\n\n"
         "Output formats:\n"
         "1) SELECT:\n"
@@ -229,6 +217,25 @@ def parse_question_to_intent(question: str) -> dict:
         " \"player\": \"<raw player reference>\",\n"
         " \"claim\": {\"field\":\"...\",\"op\":\"=\",\"value\":\"...\"}\n"
         "}\n"
+     
+        "4) TOPK:\n"
+        "{\n"
+        " \"supported\": true,\n"
+        " \"intent\": \"topk\",\n"
+        " \"filters\": [{\"field\":\"...\",\"op\":\"=\",\"value\":\"...\"}],\n"
+        " \"metric\": \"assists\",\n"
+        " \"k\": 50,\n"
+        " \"return\": [\"club\",\"league\",\"religion\",\"preferred_foot\",\"goals\",\"assists\"]\n"
+        "}\n\n"
+
+        "5) COMPARE:\n"
+        "{\n"
+        " \"supported\": true,\n"
+        " \"intent\": \"compare\",\n"
+        " \"players\": [\"<raw player ref>\", \"<raw player ref>\"],\n"
+        " \"metrics\": [\"goals\",\"assists\"]\n"
+        "}\n"
+     
     )
 
     payload = {
@@ -242,14 +249,16 @@ def parse_question_to_intent(question: str) -> dict:
     }
 
     r = requests.post(url, headers=headers, json=payload, timeout=30)
-    print("AZURE PARSER STATUS:", r.status_code)
-    print("AZURE PARSER BODY:", r.text[:500])
+    if DEBUG:
+       print("AZURE PARSER STATUS:", r.status_code)
+       print("AZURE PARSER BODY:", r.text[:500])
 
 
     if not r.ok:
-      print("AZURE parse_question_to_intent FAILED")
-      print("status:", r.status_code)
-      print("body:", r.text[:1000])
+      if DEBUG:
+         print("AZURE parse_question_to_intent FAILED")
+         print("status:", r.status_code)
+         print("body:", r.text[:1000])
       # return a supported=false intent instead of crashing your whole API
       return {"supported": False}
     data = r.json()
@@ -257,16 +266,13 @@ def parse_question_to_intent(question: str) -> dict:
 
 
 
-# ============================================================
-# Deterministic helpers
-# ============================================================
+
 
 def _norm(x):
     return x.lower().strip() if isinstance(x, str) else x
 
 def _cmp(val, op, tgt):
-    # NOTE: We do NOT block None here, because we want a special meaning:
-    # for "!=" in SELECT, None should count as "not equal" (user requested).
+    
     if isinstance(val, str) and isinstance(tgt, str):
         val, tgt = _norm(val), _norm(tgt)
     if op == "=": return val == tgt
@@ -278,9 +284,7 @@ def _cmp(val, op, tgt):
     return False
 
 
-# ============================================================
-# Foot field normalization (language + synonym driven)
-# ============================================================
+
 
 FOOT_FIELD_MAP = {
     "preferred_foot": "preferred_foot",
@@ -303,9 +307,7 @@ def normalize_foot_field(raw: str) -> str | None:
     return FOOT_FIELD_MAP.get(raw.lower().strip())
 
 
-# ============================================================
-# Club alias normalization (DB-driven)
-# ============================================================
+
 
 def _alias_key(s: str) -> str:
     s = (s or "").lower().strip()
@@ -323,9 +325,7 @@ def normalize_club(conn, raw: str) -> str | None:
     return row[0] if row else None
 
 
-# ============================================================
-# Entity resolution (authoritative)
-# ============================================================
+
 
 def resolve_player(conn, raw_name: str):
     if not raw_name:
@@ -338,9 +338,7 @@ def resolve_player(conn, raw_name: str):
     return None
 
 
-# ============================================================
-# Multi-field lookup helpers
-# ============================================================
+
 
 def _split_multi_field(field: str) -> list[str]:
     # Supports "goals+assists" and "goals,assists" just in case.
@@ -350,6 +348,18 @@ def _split_multi_field(field: str) -> list[str]:
     parts = re.split(r"[+,]\s*", f)
     parts = [p.strip() for p in parts if p and p.strip()]
     return parts
+
+def _metric_value(facts: dict, metric: str) -> int | None:
+    fields = _split_multi_field(metric)
+    if not fields:
+        return None
+    total = 0
+    for f in fields:
+        v = facts.get(f)
+        if v is None:
+            return None
+        total += int(v)
+    return total
 
 def _lookup_one_field(facts: dict, field: str) -> str | None:
     norm_field = normalize_foot_field(field)
@@ -363,7 +373,6 @@ def _lookup_one_field(facts: dict, field: str) -> str | None:
         if pref == "right":
             return "left"
         return None
-
     if field not in facts:
         return None
     v = facts.get(field)
@@ -382,9 +391,7 @@ def _format_multi_lookup(facts: dict, fields: list[str]) -> str:
     return ", ".join(out) if out else "No results."
 
 
-# ============================================================
-# Deterministic executor
-# ============================================================
+
 
 def execute_intent(conn, intent: dict) -> str:
     if not intent.get("supported"):
@@ -394,8 +401,14 @@ def execute_intent(conn, intent: dict) -> str:
 
     if itype == "select":
         candidates = fetch_all_players(conn)
+        unsupported = False
+        bad_value = None
+        bad_field = None
+
+
 
         def match(player):
+            nonlocal unsupported, bad_value, bad_field
             facts = fetch_player_facts(conn, player)
             for f in intent.get("filters", []):
                 field, op, tgt = f.get("field"), f.get("op"), f.get("value")
@@ -404,18 +417,25 @@ def execute_intent(conn, intent: dict) -> str:
                     field = norm_field
 
                 if field == "club" and isinstance(tgt, str):
-                    canon = normalize_club(conn, tgt)
-                    if not canon:
-                        return False
-                    tgt = canon
+                  canon = normalize_club(conn, tgt)
+                  if not canon:
+                     unsupported = True
+                     bad_field = "club"
+                     bad_value = tgt
+                     return False
+                  tgt = canon
+
+                if field == "religion" and tgt not in ("islam", "christian"):
+                  unsupported = True
+                  bad_field = "religion"
+                  bad_value = tgt
+                  return False
 
                 if field not in facts:
                     return False
 
                 val = facts.get(field)
 
-                # IMPORTANT: user wants "players not muslim" to include unknown religion.
-                # We implement this generally: for "!=" operator, None counts as "not equal".
                 if val is None:
                     if op == "!=":
                         continue
@@ -426,7 +446,24 @@ def execute_intent(conn, intent: dict) -> str:
             return True
 
         matches = [p for p in candidates if match(p)]
-        return ", ".join(matches) if matches else "No results."
+        if matches:
+         return ", ".join(matches)
+
+        if unsupported:
+         return json.dumps({
+           "type": "unsupported_value",
+           "field": bad_field,
+           "value": bad_value
+         })
+
+        filters = intent.get("filters", [])
+        return json.dumps({
+          "type": "empty_select",
+           "filters": filters
+        })
+
+
+
 
     if itype == "lookup":
         player = intent.get("player")
@@ -439,11 +476,9 @@ def execute_intent(conn, intent: dict) -> str:
 
         fields = _split_multi_field(field)
 
-        # Multi-field lookup (goals+assists)
         if len(fields) >= 2:
             return _format_multi_lookup(facts, fields)
 
-        # Single-field lookup
         v = _lookup_one_field(facts, field)
         return v if v is not None else "No results."
 
@@ -455,16 +490,94 @@ def execute_intent(conn, intent: dict) -> str:
             return "No"
         facts = fetch_player_facts(conn, player)
         val = facts.get(field)
-
-        # For yes/no, keep strict behavior: unknown is "No".
         return "Yes" if val is not None and _cmp(val, op, tgt) else "No"
+
+    if itype == "topk":
+        metric = intent.get("metric") or "goals"
+        raw_k = intent.get("k")
+        k = int(raw_k) if raw_k and raw_k > 5 else 50
+        return_fields = [f for f in (intent.get("return") or []) if f != "full_name"]
+
+        def match(player):
+           
+            facts = fetch_player_facts(conn, player)
+            for f in intent.get("filters", []):
+                field, op, tgt = f.get("field"), f.get("op"), f.get("value")
+                norm_field = normalize_foot_field(field)
+                if norm_field:
+                    field = norm_field
+                if field not in facts:
+                    return False
+                val = facts.get(field)
+                if val is None:
+                    if op == "!=":
+                        continue
+                    return False
+                if not _cmp(val, op, tgt):
+                    return False
+            return True
+
+        scored = []
+        for p in fetch_all_players(conn):
+            if not match(p):
+                continue
+            facts = fetch_player_facts(conn, p)
+            mv = _metric_value(facts, metric)
+            if mv is not None:
+                scored.append((p, mv))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+        rows = []
+        for name, _ in scored[:k]:
+          facts = fetch_player_facts(conn, name)
+          row = {"full_name": name}
+          for f in return_fields:
+            row[f] = facts.get(f)
+          rows.append(row)
+
+        return json.dumps(rows)
+
+
+    if itype == "compare":
+     players = intent.get("players") or []
+     metrics = intent.get("metrics")
+
+     # Default metric if none provided
+     if not metrics:
+        metrics = ["goals", "assists"]
+
+     rows = []
+
+     for p in players:
+        facts = fetch_player_facts(conn, p)
+        score = 0
+        valid = True
+
+        for m in metrics:
+            v = facts.get(m)
+            if v is None:
+                valid = False
+                break
+            score += int(v)
+
+        if not valid:
+            continue
+
+        row = {"full_name": p, "score": score}
+        for m in metrics:
+            row[m] = facts.get(m)
+
+        rows.append(row)
+
+     rows.sort(key=lambda x: x["score"], reverse=True)
+     return json.dumps(rows)
+
 
     return "No results."
 
 
-# ============================================================
-# NEW: Final answer formulation (question + deterministic result → natural answer)
-# ============================================================
+
+
 
 def formulate_answer(question: str, result: str) -> str:
     url = (
@@ -482,6 +595,13 @@ def formulate_answer(question: str, result: str) -> str:
         "If result is 'No results.', say that clearly.\n"
         "Avoid incorrect phrasing like '<name> is islam'. Use '<name>’s religion is Islam'.\n"
         "Keep the answer short and direct.\n"
+        "- The result may be a JSON array. Do not infer or add fields.\n"
+        "- Only describe fields that are explicitly present in the result.\n"
+        "- If a value is null or missing, say it is unknown.\n"
+        "- If result.type is \"empty_select\", explain that no players match the given filters.\n"
+        "- If result.type is \"unknown_player\", say the player is not present in the dataset.\n"
+        "- If result.type is \"unsupported_value\", say the value is not present in the dataset.\n"
+
     )
 
     payload = {
@@ -490,48 +610,71 @@ def formulate_answer(question: str, result: str) -> str:
             {"role": "user", "content": f"Question: {question}\nResult: {result}"},
         ],
         "temperature": 0.0,
-        "max_tokens": 120,
+        "max_tokens": 800,
     }
 
     r = requests.post(url, headers=headers, json=payload, timeout=30)
-    print("AZURE NLG STATUS:", r.status_code)
-    print("AZURE NLG BODY:", r.text[:500])
+    if DEBUG:
+       print("AZURE NLG STATUS:", r.status_code)
+       print("AZURE NLG BODY:", r.text[:500])
 
 
     if not r.ok:
-      print("AZURE formulate_answer FAILED")
-      print("status:", r.status_code)
-      print("body:", r.text[:1000])
+      if DEBUG:
+         print("AZURE formulate_answer FAILED")
+         print("status:", r.status_code)
+         print("body:", r.text[:1000])
       return result if result else "No results."
     return r.json()["choices"][0]["message"]["content"].strip()
 
 
 
-# ============================================================
-# Public API
-# ============================================================
+
 
 def ask(question: str, conn) -> str:
     intent = parse_question_to_intent(question)
 
     if intent.get("intent") in ("lookup", "yesno"):
-        raw = intent.get("player")
-        resolved = resolve_player(conn, raw)
-        if not resolved:
+      raw = intent.get("player")
+      resolved = resolve_player(conn, raw)
+      if not resolved:
+        result = json.dumps({
+            "type": "unknown_player",
+            "value": raw
+        })
+        return formulate_answer(question, result)
+
+      intent["player"] = resolved
+
+
+
+    if intent.get("intent") == "compare":
+      raws = intent.get("players") or []
+      if len(raws) < 2:
+        return "No results."
+
+      resolved = []
+      for r in raws:
+        p = resolve_player(conn, r)
+        if not p:
             return "No results."
-        intent["player"] = resolved
+        resolved.append(p)
+
+      intent["players"] = resolved
+
+ 
+
+    
+    
 
     deterministic_result = execute_intent(conn, intent)
 
-    # ONLY NEW BEHAVIOR: run final NLG pass to formulate the answer.
+  
     return formulate_answer(question, deterministic_result)
 
 
-# ============================================================
-# Demo
-# ============================================================
+
 
 if __name__ == "__main__":
     conn = make_demo_db()
    
-
