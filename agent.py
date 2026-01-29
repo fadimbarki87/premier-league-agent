@@ -236,6 +236,18 @@ def parse_question_to_intent(question: str) -> dict:
         "- IMPORTANT: compare may include more than two players.\n"
         "- IMPORTANT: If compare metrics is omitted, default to goals+assists.\n"
         "- IMPORTANT: topk may include a \"return\" list of fields to return per player.\n"
+        "- IMPORTANT: Questions asking for totals, averages, or counts over a set of players\n"
+        "  (defined by filters such as club, preferred_foot, religion, goals, assists, etc.)\n"
+        "  MUST use intent=aggregate.\n"
+        "- IMPORTANT (AGGREGATE):\n"
+        "- aggregation MUST be one of: \"sum\", \"avg\", \"count\".\n"
+        "- Map ALL language variants and synonyms to these canonical values.\n"
+        "- Examples:\n"
+        "  - average, mean, durchschnitt, moyenne, media → avg\n"
+        "  - total, summe, somme, insgesamt → sum\n"
+        "  - how many, count, anzahl, combien → count\n"
+
+
 
 
 
@@ -289,6 +301,16 @@ def parse_question_to_intent(question: str) -> dict:
         " \"players\": [\"<raw player ref>\", \"<raw player ref>\"],\n"
         " \"field\": \"<schema field or '+'-joined fields>\"\n"
         "}\n"
+        
+        "7) AGGREGATE:\n"
+        "{\n"
+        " \"supported\": true,\n"
+        " \"intent\": \"aggregate\",\n"
+        " \"filters\": [{\"field\":\"...\",\"op\":\"=\",\"value\":\"...\"}],\n"
+        " \"metric\": \"goals | assists\",\n"
+        " \"aggregation\": \"sum | avg | count\"\n"
+        "}\n"
+
 
 
 
@@ -444,8 +466,6 @@ def _lookup_one_field(facts: dict, field: str) -> str | None:
     return None if v is None else str(v)
 
 def _format_multi_lookup(facts: dict, fields: list[str]) -> str:
-    # Keep it simple and stable.
-    # Example: "goals: 200, assists: 90"
     out = []
     for f in fields:
         v = _lookup_one_field(facts, f)
@@ -463,6 +483,68 @@ def execute_intent(conn, intent: dict) -> str:
         return "No results."
 
     itype = intent.get("intent")
+
+    if itype == "aggregate":
+        metric = intent.get("metric")
+        aggregation = intent.get("aggregation")
+        
+        filters = intent.get("filters", [])
+
+        if metric not in ("goals", "assists"):
+            return "No results."
+
+        values = []
+
+        for player in fetch_all_players(conn):
+            facts = fetch_player_facts(conn, player)
+            ok = True
+
+            for f in filters:
+                field, op, tgt = f.get("field"), f.get("op"), f.get("value")
+                # Reject unsupported fields early
+                if field not in FACT_FIELDS and field != "club":
+                    return "No results."
+
+
+               
+                if field == "club":
+                    canon = normalize_club(conn, tgt)
+                    if not canon or facts.get("club") != canon:
+                        ok = False
+                        break
+                else:
+                    if field not in facts:
+                        ok = False
+                        break
+                    val = facts.get(field)
+                    if isinstance(val, int):
+                        try:
+                            tgt = int(tgt)
+                        except Exception:
+                            ok = False
+                            break
+
+                    if not _cmp(val, op, tgt):
+                       ok = False
+                       break
+
+
+            if ok and facts.get(metric) is not None:
+                values.append(int(facts[metric]))
+
+        if not values:
+            return "No results."
+
+        if aggregation == "sum":
+            return str(sum(values))
+        if aggregation == "avg":
+            return str(round(sum(values) / len(values), 2))
+        if aggregation == "count":
+            return str(len(values))
+
+        return "No results."
+
+
 
     if itype == "select":
         candidates = fetch_all_players(conn)
@@ -841,7 +923,7 @@ def _intent_requires_player(intent: dict) -> bool:
 def _build_resolved_result(intent: dict, result: str) -> ResolvedResult | None:
     itype = intent.get("intent")
 
-    # LOOKUP: entity resolution survives missing field values
+
     if itype == "yesno":
        return ResolvedResult(
            domain="players",
@@ -936,18 +1018,17 @@ def ask(
         print("question:", question)
         print("prev:", prev)
 
-    # 1) Initial parse
+   
     intent = parse_question_to_intent(question)
     if DEBUG:
         print("parsed intent:", intent)
-    # 2) Retry parse once with context if unsupported
+ 
     if not intent.get("supported") and prev is not None:
         intent = parse_followup_with_context(question, prev)
         if DEBUG:
             print("reparsed with context:", intent)
 
-    # >>> ADD THIS BLOCK HERE <<<
-    # Repair lookup_many with empty players but valid context
+   
     if (
         intent.get("intent") == "lookup_many"
         and not intent.get("players")
@@ -964,12 +1045,11 @@ def ask(
             print("repaired empty lookup_many with prev entities:", intent)
 
 
-    # 3) FINAL INTENT REPAIR USING PREVIOUS STATE
-    # Handles incomplete lookup_many or failed follow-ups
+    
     if prev is not None:
         itype = intent.get("intent")
 
-        # lookup_many but missing field
+     
         if itype == "lookup_many" and not intent.get("field"):
             field = extract_field_llm(question)
             if field:
@@ -980,7 +1060,7 @@ def ask(
                     "field": field,
                 }
 
-        # still unsupported but previous context has multiple players
+        
         if not intent.get("supported") and prev.cardinality > 1:
             field = extract_field_llm(question)
             if field:
@@ -991,7 +1071,7 @@ def ask(
                     "field": field,
                 }
 
-    # 4) HEALTHY FOLLOW-UP GUARDS
+    
 
     if _intent_requires_player(intent):
         if prev is None:
@@ -1006,11 +1086,11 @@ def ask(
                 None,
             )
 
-        # Materialize follow-up into standalone lookup
+   
         intent = dict(intent)
         intent["player"] = prev.entities[0]
 
-    # 5) ENTITY RESOLUTION FOR LOOKUP / YESNO
+   
 
     if intent.get("intent") in ("lookup", "yesno"):
         raw = intent.get("player")
@@ -1028,8 +1108,11 @@ def ask(
 
         intent["player"] = resolved
 
-    # 6) ENTITY RESOLUTION FOR COMPARE
+   
 
+    if intent.get("intent") == "aggregate":
+        prev = None
+        
     if intent.get("intent") == "compare":
         raws = intent.get("players") or []
 
@@ -1045,12 +1128,12 @@ def ask(
 
         intent["players"] = resolved
 
-    # 7) EXECUTION
+    
 
     deterministic_result = execute_intent(conn, intent)
     answer = formulate_answer(question, deterministic_result)
 
-    # 8) BUILD NEW RESOLVED STATE
+  
 
     resolved_state = _build_resolved_result(intent, deterministic_result)
 
