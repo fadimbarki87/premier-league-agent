@@ -477,6 +477,17 @@ def _format_multi_lookup(facts: dict, fields: list[str]) -> str:
 
 
 
+def try_resolve_player_from_text(conn, question: str) -> str | None:
+    # sehr simpel: versuche alle Spieler gegen den Text zu matchen
+    q = (question or "").lower()
+    for p in fetch_all_players(conn):
+        if p.lower() in q:
+            return p
+    # fallback: token-basierte Auflösung (wie resolve_player)
+    # wir nehmen "letztes Wort" nicht, weil das in vielen Sprachen Müll ist
+    return None
+
+
 
 def execute_intent(conn, intent: dict) -> str:
     if not intent.get("supported"):
@@ -1141,20 +1152,23 @@ def ask(
     # Unsupported questions always become the new context
     # If unsupported, KEEP previous context
     # If unsupported BUT a player was resolved, keep that player as context
+    # Handle context update
     if not intent.get("supported"):
-     if intent.get("player"):
-        return answer, ResolvedResult(
-            domain="players",
-            intent="lookup",
-            cardinality=1,
-            entities=[intent["player"]],
-            fields_available=set(FIELDS),
-        )
-     return answer, prev
+        mentioned = try_resolve_player_from_text(conn, question)
 
+        if mentioned:
+            return answer, ResolvedResult(
+                domain="players",
+                intent="lookup",
+                cardinality=1,
+                entities=[mentioned],
+                fields_available=set(FIELDS),
+            )
 
+        # Unsupported and no player mentioned → keep previous context
+        return answer, prev
 
-
+    # Supported intent → update context normally
     return answer, resolved_state
 
 
