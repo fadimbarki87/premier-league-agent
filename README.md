@@ -20,6 +20,25 @@ The intent is executed against a local SQLite database containing Premier League
 ### Answer Formulation
 A second Azure OpenAI call rewrites the deterministic result into a concise natural-language response without adding new facts.
 
+
+---
+
+## Conversational Context and Follow-Up Questions
+
+The backend supports conversational follow-up questions within a single user session.
+
+When a question cannot be fully resolved on its own, the system may use the previously resolved context
+to interpret follow-up queries correctly.
+
+Example:
+- "What is Mohamed Salah’s religion?"
+- "And his preferred foot?"
+- "And his club?"
+
+Context is maintained in memory per session and is not persisted.
+If the session is reset or restarted, the context is cleared.
+
+
 ---
 
 ## Tech Stack
