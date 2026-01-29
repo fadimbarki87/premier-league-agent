@@ -221,6 +221,11 @@ def parse_question_to_intent(question: str) -> dict:
         "- IMPORTANT: Multi-field lookup is allowed. If user asks for multiple attributes of ONE player,\n"
         " set field to a '+'-joined string, e.g. 'goals+assists'.\n"
         "- IMPORTANT: For questions like 'players not muslim', use select with a filter religion != islam.\n"
+        "- IMPORTANT: For SELECT, the \"return\" field MUST be a list of fields.\n"
+        "- IMPORTANT: If the user asks for per-player attributes (e.g. goals for each Arsenal player), include those fields in the return list.\n"
+        "- Example: \"return\": [\"full_name\", \"goals\"].\n"
+
+
 
 
         "- IMPORTANT: For ranking questions like 'top scorers', use intent=topk.\n"
@@ -242,7 +247,7 @@ def parse_question_to_intent(question: str) -> dict:
         " \"supported\": true,\n"
         " \"intent\": \"select\",\n"
         " \"filters\": [{\"field\":\"...\",\"op\":\"=\",\"value\":\"...\"}],\n"
-        " \"return\": \"full_name\"\n"
+        " \"return\": [\"full_name\"]\n"
         "}\n\n"
         "2) LOOKUP:\n"
         "{\n"
@@ -461,6 +466,15 @@ def execute_intent(conn, intent: dict) -> str:
 
     if itype == "select":
         candidates = fetch_all_players(conn)
+        # SELECT can return multiple fields now
+        return_fields = intent.get("return") or ["full_name"]
+        if isinstance(return_fields, str):
+            return_fields = [return_fields]
+        # keep only valid fields, always include full_name
+        return_fields = [f for f in return_fields if f in FIELDS]
+        if "full_name" not in return_fields:
+            return_fields.insert(0, "full_name")
+
         unsupported = False
         bad_value = None
         bad_field = None
@@ -507,7 +521,15 @@ def execute_intent(conn, intent: dict) -> str:
 
         matches = [p for p in candidates if match(p)]
         if matches:
-         return ", ".join(matches)
+            rows = []
+            for p in matches:
+                facts = fetch_player_facts(conn, p)
+                row = {}
+                for f in return_fields:
+                    row[f] = facts.get(f)
+                rows.append(row)
+            return json.dumps(rows)
+
 
         if unsupported:
          return json.dumps({
@@ -866,12 +888,16 @@ def _build_resolved_result(intent: dict, result: str) -> ResolvedResult | None:
 
 
 
-    # For all other intents, no results means no state
-    if not result or result == "No results.":
-        return None
-
     if itype == "select":
-        names = [n.strip() for n in result.split(",") if n.strip()]
+        try:
+            rows = json.loads(result)
+            if isinstance(rows, list):
+                names = [r.get("full_name") for r in rows if isinstance(r, dict)]
+            else:
+                names = []
+        except Exception:
+            names = [n.strip() for n in result.split(",") if n.strip()]
+
         return ResolvedResult(
             domain="players",
             intent="select",
@@ -879,6 +905,9 @@ def _build_resolved_result(intent: dict, result: str) -> ResolvedResult | None:
             entities=names,
             fields_available=set(FIELDS),
         )
+
+    if not result or result == "No results.":
+        return None
 
     if itype == "compare":
         return ResolvedResult(
