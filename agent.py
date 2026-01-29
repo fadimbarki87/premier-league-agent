@@ -14,9 +14,20 @@ class ResolvedResult:
 class Agent:
     def __init__(self):
         self._prev: ResolvedResult | None = None
+        self._has_context = False
+
     def ask(self, question: str, conn) -> str:
-        answer, self._prev = ask(question, conn, self._prev)
+        # Only pass previous context if it is valid
+        answer, new_prev = ask(
+            question,
+            conn,
+            self._prev if self._has_context else None
+        )
+
+        self._prev = new_prev
+        self._has_context = new_prev is not None
         return answer
+
 
 
 
