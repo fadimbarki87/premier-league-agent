@@ -20,28 +20,31 @@ app.add_middleware(
 try:
     conn = make_demo_db()
     print("Database initialized successfully")
-except Exception as e:
+except Exception:
     print("DATABASE INIT FAILED")
     traceback.print_exc()
-    raise e
+    raise
 
-# In-memory session store
+# In-memory session store: session_id -> Agent
 agents: dict[str, Agent] = {}
+
 
 class Question(BaseModel):
     session_id: str
     question: str
 
+
 @app.get("/")
 def root():
     return {"status": "ok"}
+
 
 @app.post("/ask")
 def ask_agent(q: Question):
     try:
         sid = q.session_id
 
-        # Create a new Agent per session if needed
+        # One Agent per session
         if sid not in agents:
             agents[sid] = Agent()
 
@@ -53,3 +56,12 @@ def ask_agent(q: Question):
     except Exception:
         traceback.print_exc()
         return {"answer": "Internal server error. Check logs."}
+
+
+@app.post("/reset")
+def reset_agent(session_id: str):
+    """
+    Reset ONLY this user's conversation state.
+    """
+    agents.pop(session_id, None)
+    return {"status": "reset"}
