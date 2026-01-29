@@ -1056,14 +1056,10 @@ def ask(
 
     # Preserve previous context if intent was unsupported
     # Unsupported questions always become the new context
+    # If unsupported, KEEP previous context
     if not intent.get("supported"):
-        resolved_state = ResolvedResult(
-            domain="players",
-            intent="unsupported",
-            cardinality=0,
-            entities=[question],
-            fields_available=set(FIELDS),
-        )
+       return answer, prev
+
 
 
     return answer, resolved_state
