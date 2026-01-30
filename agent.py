@@ -177,6 +177,18 @@ def parse_question_to_intent(question: str) -> dict:
         "- Only set supported=false if the question cannot be represented.\n"
         "- IMPORTANT: For club, keep the user's phrasing as-is in the value (do not normalize clubs).\n"
         "- IMPORTANT: If exactly ONE player is referenced and user asks about attributes, ALWAYS use intent=lookup.\n"
+        "- IMPORTANT: If MULTIPLE players are referenced and the user asks about attributes,\n"
+        "  ALWAYS use intent=lookup_many.\n"
+        "- IMPORTANT: lookup_many MUST include:\n"
+        "  - players: list of raw player references\n"
+        "  - field: schema field or '+'-joined fields.\n"
+
+        "- IMPORTANT: You MUST set supported=false if the question refers to any concept\n"
+        "  NOT explicitly present as a field in the schema.\n"
+        "- IMPORTANT: Do NOT approximate or map unsupported concepts to existing fields.\n"
+        "- IMPORTANT: Examples of unsupported concepts include player positions,\n"
+        "  speed, age, height, or subjective qualities.\n"
+
         "- IMPORTANT: Multi-field lookup is allowed. If user asks for multiple attributes of ONE player,\n"
         " set field to a '+'-joined string, e.g. 'goals+assists'.\n"
         "- IMPORTANT: For questions like 'players not muslim', use select with a filter religion != islam.\n"
@@ -191,6 +203,24 @@ def parse_question_to_intent(question: str) -> dict:
         "- IMPORTANT: If compare metrics is omitted, default to goals+assists.\n"
         "- IMPORTANT: topk may include a \"return\" list of fields to return per player.\n"
 
+        "IMPORTANT: Questions asking for totals, averages, or counts over a set of players\n"
+        "(defined by filters such as club, preferred_foot, religion, goals, assists, etc.)\n"
+        "MUST use intent=aggregate.\n"
+        "IMPORTANT (AGGREGATE):\n"
+        "- aggregation MUST be one of: \"sum\", \"avg\", \"count\".\n"
+        "- metric MUST be \"goals\" or \"assists\".\n"
+        "IMPORTANT (AGGREGATE NORMALIZATION):\n"
+        "- Map language variants and synonyms to canonical aggregation values:\n"
+        "- average, mean, durchschnitt, moyenne, media, promedio → avg\n"
+        "- total, sum, summe, somme, insgesamt → sum\n"
+        "- how many, count, anzahl, combien, cuantos → count\n"
+
+        "- IMPORTANT: For SELECT, the \"return\" field MUST be a list of fields.\n"
+        "- IMPORTANT: If the user asks for per-player attributes (for example goals for each Arsenal player),\n"
+        "  include those attributes in the return list.\n"
+
+
+
       
 
 
@@ -201,7 +231,7 @@ def parse_question_to_intent(question: str) -> dict:
         " \"supported\": true,\n"
         " \"intent\": \"select\",\n"
         " \"filters\": [{\"field\":\"...\",\"op\":\"=\",\"value\":\"...\"}],\n"
-        " \"return\": \"full_name\"\n"
+        " \"return\": [\"full_name\"]\n"
         "}\n\n"
         "2) LOOKUP:\n"
         "{\n"
@@ -235,6 +265,25 @@ def parse_question_to_intent(question: str) -> dict:
         " \"players\": [\"<raw player ref>\", \"<raw player ref>\"],\n"
         " \"metrics\": [\"goals\",\"assists\"]\n"
         "}\n"
+        
+        "6) AGGREGATE:\n"
+        "{\n"
+        " \"supported\": true,\n"
+        " \"intent\": \"aggregate\",\n"
+        " \"filters\": [{\"field\":\"...\",\"op\":\"=\",\"value\":\"...\"}],\n"
+        " \"metric\": \"goals | assists\",\n"
+        " \"aggregation\": \"sum | avg | count\"\n"
+        "}\n"
+
+        "7) LOOKUP_MANY:\n"
+        "{\n"
+        " \"supported\": true,\n"
+        " \"intent\": \"lookup_many\",\n"
+        " \"players\": [\"<raw player ref>\", \"<raw player ref>\"],\n"
+        " \"field\": \"<schema field or '+'-joined fields>\"\n"
+        "}\n\n"
+
+
      
     )
 
@@ -399,6 +448,73 @@ def execute_intent(conn, intent: dict) -> str:
 
     itype = intent.get("intent")
 
+    if itype == "aggregate":
+        metric = intent.get("metric")
+        aggregation = intent.get("aggregation")
+        filters = intent.get("filters", [])
+
+        if aggregation not in ("sum", "avg", "count"):
+            return "No results."
+
+        if aggregation != "count" and metric not in ("goals", "assists"):
+            return "No results."
+
+        values = []
+
+        for player in fetch_all_players(conn):
+            facts = fetch_player_facts(conn, player)
+            ok = True
+
+            for f in filters:
+                field, op, tgt = f.get("field"), f.get("op"), f.get("value")
+                if field not in FACT_FIELDS and field != "club":
+                     return "No results."
+
+
+                norm_field = normalize_foot_field(field)
+                if norm_field:
+                    field = norm_field
+
+                if field == "club":
+                    canon = normalize_club(conn, tgt)
+                    if not canon or facts.get("club") != canon:
+                        ok = False
+                        break
+                else:
+                    if field not in facts:
+                        ok = False
+                        break
+                    val = facts.get(field)
+                    if val is None:
+                        ok = False
+                        break
+                    if not _cmp(val, op, tgt):
+                        ok = False
+                        break
+
+            if not ok:
+                continue
+
+            if aggregation == "count":
+                values.append(1)
+            else:
+                v = facts.get(metric)
+                if v is not None:
+                    values.append(int(v))
+
+        if not values:
+            return "No results."
+
+        if aggregation == "sum":
+            return str(sum(values))
+
+        if aggregation == "avg":
+            return str(round(sum(values) / len(values), 2))
+
+        if aggregation == "count":
+            return str(len(values))
+
+
     if itype == "select":
         candidates = fetch_all_players(conn)
         unsupported = False
@@ -445,9 +561,26 @@ def execute_intent(conn, intent: dict) -> str:
                     return False
             return True
 
+        ####
+        return_fields = intent.get("return") or ["full_name"]
+        if isinstance(return_fields, str):
+            return_fields = [return_fields]
+
+        return_fields = [f for f in return_fields if f in FIELDS]
+        if "full_name" not in return_fields:
+            return_fields.insert(0, "full_name")
+
         matches = [p for p in candidates if match(p)]
         if matches:
-         return ", ".join(matches)
+            rows = []
+            for p in matches:
+                facts = fetch_player_facts(conn, p)
+                row = {}
+                for f in return_fields:
+                    row[f] = facts.get(f)
+                rows.append(row)
+            return json.dumps(rows)
+
 
         if unsupported:
          return json.dumps({
@@ -482,6 +615,32 @@ def execute_intent(conn, intent: dict) -> str:
         v = _lookup_one_field(facts, field)
         return v if v is not None else "No results."
 
+    
+    if itype == "lookup_many":
+        players = intent.get("players") or []
+        field = intent.get("field")
+
+        if not players or not field:
+            return "No results."
+
+        fields = _split_multi_field(field)
+        rows = []
+
+        for raw in players:
+            p = resolve_player(conn, raw)
+            if not p:
+                continue
+
+            facts = fetch_player_facts(conn, p)
+            row = {"full_name": p}
+
+            for f in fields:
+                row[f] = _lookup_one_field(facts, f)
+
+            rows.append(row)
+
+        return json.dumps(rows) if rows else "No results."
+
     if itype == "yesno":
         player = intent.get("player")
         claim = intent.get("claim") or {}
@@ -503,6 +662,9 @@ def execute_intent(conn, intent: dict) -> str:
             facts = fetch_player_facts(conn, player)
             for f in intent.get("filters", []):
                 field, op, tgt = f.get("field"), f.get("op"), f.get("value")
+                if field not in FACT_FIELDS:
+                     return False
+
                 norm_field = normalize_foot_field(field)
                 if norm_field:
                     field = norm_field
@@ -634,6 +796,9 @@ def formulate_answer(question: str, result: str) -> str:
 
 def ask(question: str, conn) -> str:
     intent = parse_question_to_intent(question)
+    if not intent.get("supported", True):
+        return formulate_answer(question, "No results.")
+
 
     if intent.get("intent") in ("lookup", "yesno"):
       raw = intent.get("player")
@@ -662,6 +827,16 @@ def ask(question: str, conn) -> str:
         resolved.append(p)
 
       intent["players"] = resolved
+   
+    if intent.get("intent") == "lookup_many":
+        raws = intent.get("players") or []
+        resolved = []
+        for r in raws:
+            p = resolve_player(conn, r)
+            if p:
+                resolved.append(p)
+        intent["players"] = resolved
+
 
  
 
