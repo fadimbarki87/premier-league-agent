@@ -3,11 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import traceback
 
-from agent import make_demo_db, Agent
+from agent import make_demo_db, ask
 
 app = FastAPI()
 
-# CORS
+# CORS (correct)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,52 +16,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize DB
+# Initialize DB safely
 try:
     conn = make_demo_db()
     print("Database initialized successfully")
-except Exception:
+except Exception as e:
     print("DATABASE INIT FAILED")
     traceback.print_exc()
-    raise
-
-# In-memory session store: session_id -> Agent
-agents: dict[str, Agent] = {}
-
+    raise e
 
 class Question(BaseModel):
-    session_id: str
     question: str
-
 
 @app.get("/")
 def root():
     return {"status": "ok"}
 
-
 @app.post("/ask")
 def ask_agent(q: Question):
     try:
-        sid = q.session_id
-
-        # One Agent per session
-        if sid not in agents:
-            agents[sid] = Agent()
-
-        agent = agents[sid]
-        answer = agent.ask(q.question, conn)
-
+        answer = ask(q.question, conn)
         return {"answer": answer}
-
     except Exception:
         traceback.print_exc()
         return {"answer": "Internal server error. Check logs."}
-
-
-@app.post("/reset")
-def reset_agent(session_id: str):
-    """
-    Reset ONLY this user's conversation state.
-    """
-    agents.pop(session_id, None)
-    return {"status": "reset"}
