@@ -1,42 +1,13 @@
+
+
+
+
 from __future__ import annotations
-from dataclasses import dataclass
-
-@dataclass
-class ResolvedResult:
-    domain: str                  # "players"
-    intent: str                  # lookup, select, topk, compare
-    cardinality: int             # 0, 1, many
-    entities: list[str]          # resolved player names
-    fields_available: set[str]   # legal follow-up fields
-
-
-
-class Agent:
-    def __init__(self):
-        self._prev: ResolvedResult | None = None
-        self._has_context = False
-
-    def ask(self, question: str, conn) -> str:
-        # Only pass previous context if it is valid
-        answer, new_prev = ask(
-            question,
-            conn,
-            self._prev if self._has_context else None
-        )
-
-        self._prev = new_prev
-        self._has_context = new_prev is not None
-        return answer
-
-
-
-
 import os
 import re
 import json
 import sqlite3
 import requests
-import unicodedata
 import csv
 DEBUG = False
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -70,7 +41,7 @@ def make_demo_db():
     )
     """)
 
-
+   
 
     if not os.path.exists(CSV_PATH):
         raise RuntimeError(f"CSV not found at {CSV_PATH}")
@@ -86,8 +57,7 @@ def make_demo_db():
                     row["club"],
                     row["league"],
                     row.get("hair_color"),
-                    (row.get("religion") or "").strip().lower() or None,
-
+                    row.get("religion") or None,
                     row.get("preferred_foot"),
                     int(row.get("goals", 0)),
                     int(row.get("assists", 0)),
@@ -204,30 +174,14 @@ def parse_question_to_intent(question: str) -> dict:
         "- Map synonyms to canonical values ONLY for the fields listed in Canonical values.\n"
         "- Operators allowed: = != > < >= <=\n"
         "- Do NOT reject partial or ambiguous player names.\n"
-        "- You MUST set supported=false if the question refers to any concept not explicitly present as a field in the schema. Do NOT approximate or map such concepts to existing fields.\n"
-
-        "- IMPORTANT: If the question refers to concepts NOT present in the schema "
-        " (for example player positions like defender, goalkeeper, midfielder), "
-        "set supported=false. Do NOT map such concepts to existing fields.\n"
-
+        "- Only set supported=false if the question cannot be represented.\n"
         "- IMPORTANT: For club, keep the user's phrasing as-is in the value (do not normalize clubs).\n"
         "- IMPORTANT: If exactly ONE player is referenced and user asks about attributes, ALWAYS use intent=lookup.\n"
-
-        "- IMPORTANT: If MULTIPLE players are referenced and the user asks about attributes, use intent=lookup_many with:\n"
-        "- players: list of raw player references\n"
-        "- field: schema field or '+'-joined fields.\n"
-
-
         "- IMPORTANT: Multi-field lookup is allowed. If user asks for multiple attributes of ONE player,\n"
         " set field to a '+'-joined string, e.g. 'goals+assists'.\n"
         "- IMPORTANT: For questions like 'players not muslim', use select with a filter religion != islam.\n"
-        "- IMPORTANT: For SELECT, the \"return\" field MUST be a list of fields.\n"
-        "- IMPORTANT: If the user asks for per-player attributes (e.g. goals for each Arsenal player), include those fields in the return list.\n"
-        "- Example: \"return\": [\"full_name\", \"goals\"].\n"
 
-
-
-
+     
         "- IMPORTANT: For ranking questions like 'top scorers', use intent=topk.\n"
         "- IMPORTANT: topk supports metric 'goals', 'assists', or 'goals+assists'.\n"
         "- IMPORTANT: topk supports filters the same way as SELECT.\n"
@@ -236,20 +190,8 @@ def parse_question_to_intent(question: str) -> dict:
         "- IMPORTANT: compare may include more than two players.\n"
         "- IMPORTANT: If compare metrics is omitted, default to goals+assists.\n"
         "- IMPORTANT: topk may include a \"return\" list of fields to return per player.\n"
-        "- IMPORTANT: Questions asking for totals, averages, or counts over a set of players\n"
-        "  (defined by filters such as club, preferred_foot, religion, goals, assists, etc.)\n"
-        "  MUST use intent=aggregate.\n"
-        "- IMPORTANT (AGGREGATE):\n"
-        "- aggregation MUST be one of: \"sum\", \"avg\", \"count\".\n"
-        "- Map ALL language variants and synonyms to these canonical values.\n"
-        "- Examples:\n"
-        "  - average, mean, durchschnitt, moyenne, media → avg\n"
-        "  - total, summe, somme, insgesamt → sum\n"
-        "  - how many, count, anzahl, combien → count\n"
 
-
-
-
+      
 
 
         "- Output JSON ONLY, no extra text.\n\n"
@@ -259,7 +201,7 @@ def parse_question_to_intent(question: str) -> dict:
         " \"supported\": true,\n"
         " \"intent\": \"select\",\n"
         " \"filters\": [{\"field\":\"...\",\"op\":\"=\",\"value\":\"...\"}],\n"
-        " \"return\": [\"full_name\"]\n"
+        " \"return\": \"full_name\"\n"
         "}\n\n"
         "2) LOOKUP:\n"
         "{\n"
@@ -275,7 +217,7 @@ def parse_question_to_intent(question: str) -> dict:
         " \"player\": \"<raw player reference>\",\n"
         " \"claim\": {\"field\":\"...\",\"op\":\"=\",\"value\":\"...\"}\n"
         "}\n"
-
+     
         "4) TOPK:\n"
         "{\n"
         " \"supported\": true,\n"
@@ -293,27 +235,7 @@ def parse_question_to_intent(question: str) -> dict:
         " \"players\": [\"<raw player ref>\", \"<raw player ref>\"],\n"
         " \"metrics\": [\"goals\",\"assists\"]\n"
         "}\n"
-
-        "6) LOOKUP_MANY:\n"
-        "{\n"
-        " \"supported\": true,\n"
-        " \"intent\": \"lookup_many\",\n"
-        " \"players\": [\"<raw player ref>\", \"<raw player ref>\"],\n"
-        " \"field\": \"<schema field or '+'-joined fields>\"\n"
-        "}\n"
-        
-        "7) AGGREGATE:\n"
-        "{\n"
-        " \"supported\": true,\n"
-        " \"intent\": \"aggregate\",\n"
-        " \"filters\": [{\"field\":\"...\",\"op\":\"=\",\"value\":\"...\"}],\n"
-        " \"metric\": \"goals | assists\",\n"
-        " \"aggregation\": \"sum | avg | count\"\n"
-        "}\n"
-
-
-
-
+     
     )
 
     payload = {
@@ -340,16 +262,7 @@ def parse_question_to_intent(question: str) -> dict:
       # return a supported=false intent instead of crashing your whole API
       return {"supported": False}
     data = r.json()
-    content = data["choices"][0]["message"]["content"]
-
-    try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        if DEBUG:
-            print("AZURE PARSER INVALID JSON:")
-            print(content)
-        return {"supported": False}
-
+    return json.loads(data["choices"][0]["message"]["content"])
 
 
 
@@ -359,7 +272,7 @@ def _norm(x):
     return x.lower().strip() if isinstance(x, str) else x
 
 def _cmp(val, op, tgt):
-
+    
     if isinstance(val, str) and isinstance(tgt, str):
         val, tgt = _norm(val), _norm(tgt)
     if op == "=": return val == tgt
@@ -466,6 +379,8 @@ def _lookup_one_field(facts: dict, field: str) -> str | None:
     return None if v is None else str(v)
 
 def _format_multi_lookup(facts: dict, fields: list[str]) -> str:
+    # Keep it simple and stable.
+    # Example: "goals: 200, assists: 90"
     out = []
     for f in fields:
         v = _lookup_one_field(facts, f)
@@ -477,17 +392,6 @@ def _format_multi_lookup(facts: dict, fields: list[str]) -> str:
 
 
 
-def try_resolve_player_from_text(conn, question: str) -> str | None:
-    # sehr simpel: versuche alle Spieler gegen den Text zu matchen
-    q = (question or "").lower()
-    for p in fetch_all_players(conn):
-        if p.lower() in q:
-            return p
-    # fallback: token-basierte Auflösung (wie resolve_player)
-    # wir nehmen "letztes Wort" nicht, weil das in vielen Sprachen Müll ist
-    return None
-
-
 
 def execute_intent(conn, intent: dict) -> str:
     if not intent.get("supported"):
@@ -495,79 +399,8 @@ def execute_intent(conn, intent: dict) -> str:
 
     itype = intent.get("intent")
 
-    if itype == "aggregate":
-        metric = intent.get("metric")
-        aggregation = intent.get("aggregation")
-        
-        filters = intent.get("filters", [])
-
-        if metric not in ("goals", "assists"):
-            return "No results."
-
-        values = []
-
-        for player in fetch_all_players(conn):
-            facts = fetch_player_facts(conn, player)
-            ok = True
-
-            for f in filters:
-                field, op, tgt = f.get("field"), f.get("op"), f.get("value")
-                # Reject unsupported fields early
-                if field not in FACT_FIELDS and field != "club":
-                    return "No results."
-
-
-               
-                if field == "club":
-                    canon = normalize_club(conn, tgt)
-                    if not canon or facts.get("club") != canon:
-                        ok = False
-                        break
-                else:
-                    if field not in facts:
-                        ok = False
-                        break
-                    val = facts.get(field)
-                    if isinstance(val, int):
-                        try:
-                            tgt = int(tgt)
-                        except Exception:
-                            ok = False
-                            break
-
-                    if not _cmp(val, op, tgt):
-                       ok = False
-                       break
-
-
-            if ok and facts.get(metric) is not None:
-                values.append(int(facts[metric]))
-
-        if not values:
-            return "No results."
-
-        if aggregation == "sum":
-            return str(sum(values))
-        if aggregation == "avg":
-            return str(round(sum(values) / len(values), 2))
-        if aggregation == "count":
-            return str(len(values))
-
-        return "No results."
-
-
-
     if itype == "select":
         candidates = fetch_all_players(conn)
-        # SELECT can return multiple fields now
-        return_fields = intent.get("return") or ["full_name"]
-        if isinstance(return_fields, str):
-            return_fields = [return_fields]
-        # keep only valid fields, always include full_name
-        return_fields = [f for f in return_fields if f in FIELDS]
-        if "full_name" not in return_fields:
-            return_fields.insert(0, "full_name")
-
         unsupported = False
         bad_value = None
         bad_field = None
@@ -614,15 +447,7 @@ def execute_intent(conn, intent: dict) -> str:
 
         matches = [p for p in candidates if match(p)]
         if matches:
-            rows = []
-            for p in matches:
-                facts = fetch_player_facts(conn, p)
-                row = {}
-                for f in return_fields:
-                    row[f] = facts.get(f)
-                rows.append(row)
-            return json.dumps(rows)
-
+         return ", ".join(matches)
 
         if unsupported:
          return json.dumps({
@@ -641,7 +466,6 @@ def execute_intent(conn, intent: dict) -> str:
 
 
     if itype == "lookup":
-
         player = intent.get("player")
         field = intent.get("field")
         if not player or not field:
@@ -658,52 +482,12 @@ def execute_intent(conn, intent: dict) -> str:
         v = _lookup_one_field(facts, field)
         return v if v is not None else "No results."
 
-
-    if itype == "lookup_many":
-      players = intent.get("players") or []
-      field = intent.get("field")
-
-      if not players or not field:
-          return "No results."
-
-      fields = _split_multi_field(field)
-      rows = []
-
-      for raw in players:
-          p = resolve_player(conn, raw)
-          if not p:
-              continue
-
-          facts = fetch_player_facts(conn, p)
-          row = {"full_name": p}
-
-          for f in fields:
-              row[f] = _lookup_one_field(facts, f)
-
-          rows.append(row)
-
-      return json.dumps(rows) if rows else "No results."
-
-
-
     if itype == "yesno":
         player = intent.get("player")
         claim = intent.get("claim") or {}
         field, op, tgt = claim.get("field"), claim.get("op"), claim.get("value")
-        
-
-        # Reject yes/no claims that did not come from an explicit field question
-        if (
-          not player
-          or field not in FACT_FIELDS
-          
-          ):
-
-         return json.dumps({
-             "type": "unsupported_field",
-             "field": field
-         })
-
+        if not player or field not in FACT_FIELDS:
+            return "No"
         facts = fetch_player_facts(conn, player)
         val = facts.get(field)
         return "Yes" if val is not None and _cmp(val, op, tgt) else "No"
@@ -715,7 +499,7 @@ def execute_intent(conn, intent: dict) -> str:
         return_fields = [f for f in (intent.get("return") or []) if f != "full_name"]
 
         def match(player):
-
+           
             facts = fetch_player_facts(conn, player)
             for f in intent.get("filters", []):
                 field, op, tgt = f.get("field"), f.get("op"), f.get("value")
@@ -794,81 +578,6 @@ def execute_intent(conn, intent: dict) -> str:
 
 
 
-def extract_field_llm(question: str) -> str | None:
-    url = (
-        f"{AZURE_OPENAI_ENDPOINT}/openai/deployments/"
-        f"{AZURE_OPENAI_DEPLOYMENT}/chat/completions"
-        f"?api-version={AZURE_OPENAI_API_VERSION}"
-    )
-
-    headers = {"Content-Type": "application/json", "api-key": AZURE_OPENAI_API_KEY}
-
-    system_prompt = (
-        "You extract a SINGLE database field from a follow-up question.\n"
-        "Supported fields:\n"
-        "- club\n"
-        "- league\n"
-        "- hair_color\n"
-        "- religion\n"
-        "- preferred_foot\n"
-        "- weak_foot\n"
-        "- goals\n"
-        "- assists\n\n"
-        "Rules:\n"
-        "- Output ONLY one field name or null.\n"
-        "- Be language-agnostic.\n"
-        "- If the question asks about multiple attributes, output null.\n"
-        "- Output JSON only.\n\n"
-        "Format:\n"
-        "{ \"field\": \"preferred_foot\" }\n"
-        "or\n"
-        "{ \"field\": null }"
-    )
-
-    payload = {
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": question},
-        ],
-        "temperature": 0.0,
-        "max_tokens": 50,
-        "response_format": {"type": "json_object"},
-    }
-
-    r = requests.post(url, headers=headers, json=payload, timeout=30)
-    if not r.ok:
-        return None
-
-    data = r.json()
-    parsed = json.loads(data["choices"][0]["message"]["content"])
-    field = parsed.get("field")
-
-    ALLOWED_FIELDS = {
-        "club",
-        "league",
-        "hair_color",
-        "religion",
-        "preferred_foot",
-        "weak_foot",
-        "goals",
-        "assists",
-    }
-
-    return field if field in ALLOWED_FIELDS else None
-
-
-
-def parse_followup_with_context(question: str, prev: ResolvedResult) -> dict:
-    names = ", ".join(prev.entities)
-
-    augmented = (
-        f"Context players: {names}.\n"
-        f"Question: {question}"
-    )
-
-    return parse_question_to_intent(augmented)
-
-
 
 def formulate_answer(question: str, result: str) -> str:
     url = (
@@ -923,261 +632,50 @@ def formulate_answer(question: str, result: str) -> str:
 
 
 
-
-
-def _intent_requires_player(intent: dict) -> bool:
-    return intent.get("intent") in ("lookup", "yesno") and not intent.get("player")
-
-
-
-
-def _build_resolved_result(intent: dict, result: str) -> ResolvedResult | None:
-    itype = intent.get("intent")
-
-
-    if itype == "yesno":
-       return ResolvedResult(
-           domain="players",
-           intent="lookup",
-           cardinality=1,
-           entities=[intent["player"]],
-           fields_available=set(FIELDS),
-       )
-
-
-    if itype == "lookup":
-        return ResolvedResult(
-            domain="players",
-            intent="lookup",
-            cardinality=1,
-            entities=[intent["player"]],
-            fields_available=set(FIELDS),
-        )
-    if itype == "lookup_many":
-      return ResolvedResult(
-          domain="players",
-          intent="lookup_many",
-          cardinality=len(intent.get("players", [])),
-          entities=intent.get("players", []),
-          fields_available=set(FIELDS),
-      )
-
-    if itype == "topk":
-        try:
-            rows = json.loads(result)
-            names = [r["full_name"] for r in rows if "full_name" in r]
-        except Exception:
-            return None
-
-        return ResolvedResult(
-            domain="players",
-            intent="topk",
-            cardinality=len(names),
-            entities=names,
-            fields_available=set(FIELDS),
-        )
-
-
-
-
-
-    if itype == "select":
-        try:
-            rows = json.loads(result)
-            if isinstance(rows, list):
-                names = [r.get("full_name") for r in rows if isinstance(r, dict)]
-            else:
-                names = []
-        except Exception:
-            names = [n.strip() for n in result.split(",") if n.strip()]
-
-        return ResolvedResult(
-            domain="players",
-            intent="select",
-            cardinality=len(names),
-            entities=names,
-            fields_available=set(FIELDS),
-        )
-
-    if not result or result == "No results.":
-        return None
-
-    if itype == "compare":
-        return ResolvedResult(
-            domain="players",
-            intent="compare",
-            cardinality=len(intent.get("players", [])),
-            entities=intent.get("players", []),
-            fields_available=set(FIELDS),
-        )
-
-    return None
-
-
-
-
-
-
-def ask(
-    question: str,
-    conn,
-    prev: ResolvedResult | None = None
-) -> tuple[str, ResolvedResult | None]:
-
-    if DEBUG:
-        print("\n--- ASK CALL ---")
-        print("question:", question)
-        print("prev:", prev)
-
-   
+def ask(question: str, conn) -> str:
     intent = parse_question_to_intent(question)
-    if DEBUG:
-        print("parsed intent:", intent)
- 
-    if not intent.get("supported") and prev is not None:
-        intent = parse_followup_with_context(question, prev)
-        if DEBUG:
-            print("reparsed with context:", intent)
-
-   
-    if (
-        intent.get("intent") == "lookup_many"
-        and not intent.get("players")
-        and prev is not None
-        and prev.cardinality > 0
-    ):
-        intent = {
-            "supported": True,
-            "intent": "lookup_many",
-            "players": prev.entities,
-            "field": intent.get("field"),
-        }
-        if DEBUG:
-            print("repaired empty lookup_many with prev entities:", intent)
-
-
-    
-    if prev is not None:
-        itype = intent.get("intent")
-
-     
-        if itype == "lookup_many" and not intent.get("field"):
-            field = extract_field_llm(question)
-            if field:
-                intent = {
-                    "supported": True,
-                    "intent": "lookup_many",
-                    "players": prev.entities,
-                    "field": field,
-                }
-
-        
-        if not intent.get("supported") and prev.cardinality > 1:
-            field = extract_field_llm(question)
-            if field:
-                intent = {
-                    "supported": True,
-                    "intent": "lookup_many",
-                    "players": prev.entities,
-                    "field": field,
-                }
-
-    
-
-    if _intent_requires_player(intent):
-        if prev is None:
-            return (
-                "Ambiguous question. Please specify a player.",
-                None,
-            )
-
-        if prev.cardinality != 1:
-            return (
-                "Ambiguous follow-up. Multiple players were previously returned.",
-                None,
-            )
-
-   
-        intent = dict(intent)
-        intent["player"] = prev.entities[0]
-
-   
 
     if intent.get("intent") in ("lookup", "yesno"):
-        raw = intent.get("player")
-        resolved = resolve_player(conn, raw)
+      raw = intent.get("player")
+      resolved = resolve_player(conn, raw)
+      if not resolved:
+        result = json.dumps({
+            "type": "unknown_player",
+            "value": raw
+        })
+        return formulate_answer(question, result)
 
-        if not resolved and prev is not None and prev.cardinality == 1:
-            resolved = prev.entities[0]
+      intent["player"] = resolved
 
-        if not resolved:
-            result = json.dumps({
-                "type": "unknown_player",
-                "value": raw
-            })
-            return formulate_answer(question, result), None
 
-        intent["player"] = resolved
 
-   
-
-    if intent.get("intent") == "aggregate":
-        prev = None
-        
     if intent.get("intent") == "compare":
-        raws = intent.get("players") or []
+      raws = intent.get("players") or []
+      if len(raws) < 2:
+        return "No results."
 
-        if len(raws) < 2:
-            return "No results.", None
+      resolved = []
+      for r in raws:
+        p = resolve_player(conn, r)
+        if not p:
+            return "No results."
+        resolved.append(p)
 
-        resolved = []
-        for r in raws:
-            p = resolve_player(conn, r)
-            if not p:
-                return "No results.", None
-            resolved.append(p)
+      intent["players"] = resolved
 
-        intent["players"] = resolved
+ 
 
+    
     
 
     deterministic_result = execute_intent(conn, intent)
-    answer = formulate_answer(question, deterministic_result)
 
   
-
-    resolved_state = _build_resolved_result(intent, deterministic_result)
-
-    # Preserve previous context if intent was unsupported
-    # Unsupported questions always become the new context
-    # If unsupported, KEEP previous context
-    # If unsupported BUT a player was resolved, keep that player as context
-    # Handle context update
-    if not intent.get("supported"):
-        mentioned = try_resolve_player_from_text(conn, question)
-
-        if mentioned:
-            return answer, ResolvedResult(
-                domain="players",
-                intent="lookup",
-                cardinality=1,
-                entities=[mentioned],
-                fields_available=set(FIELDS),
-            )
-
-        # Unsupported and no player mentioned → keep previous context
-        return answer, prev
-
-    # Supported intent → update context normally
-    return answer, resolved_state
-
-
-
-
-
+    return formulate_answer(question, deterministic_result)
 
 
 
 
 if __name__ == "__main__":
     conn = make_demo_db()
+   
