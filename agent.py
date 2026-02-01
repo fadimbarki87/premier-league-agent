@@ -174,6 +174,7 @@ def parse_question_to_intent(question: str) -> dict:
         "- Map synonyms to canonical values ONLY for the fields listed in Canonical values.\n"
         "- Operators allowed: = != > < >= <=\n"
         "- Do NOT reject partial or ambiguous player names.\n"
+        "- IMPORTANT (CASING NORMALIZATION): Player name detection MUST be case-insensitive. Lowercase tokens that match player names must still be treated as player references.\n"
         "- Only set supported=false if the question cannot be represented.\n"
         "- IMPORTANT: For club, keep the user's phrasing as-is in the value (do not normalize clubs).\n"
         "- IMPORTANT: If exactly ONE player is referenced and user asks about attributes, ALWAYS use intent=lookup.\n"
