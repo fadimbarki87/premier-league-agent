@@ -9,7 +9,7 @@ import json
 import sqlite3
 import requests
 import csv
-DEBUG = False
+DEBUG = True
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(BASE_DIR, "premier_league_players.csv")
 
