@@ -795,6 +795,9 @@ def formulate_answer(question: str, result: str) -> str:
 
 
 def ask(question: str, conn) -> str:
+    if DEBUG:
+        print("RAW QUESTION REPR:", repr(question))
+    question = question.strip()
     intent = parse_question_to_intent(question)
     if not intent.get("supported", True):
         return formulate_answer(question, "No results.")
