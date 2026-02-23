@@ -765,9 +765,10 @@ def formulate_answer(question: str, result: str) -> str:
         "- The result may be a JSON array. Do not infer or add fields.\n"
         "- Only describe fields that are explicitly present in the result.\n"
         "- If a value is null or missing, say it is unknown.\n"
-        "- If result.type is \"empty_select\", explain that no players match the given filters.\n"
-        "- If result.type is \"unknown_player\", say the player is not present in the dataset.\n"
-        "- If result.type is \"unsupported_value\", say the value is not present in the dataset.\n"
+        "- If result.type is \"empty_select\", respond with: Your question is not deterministic, I do not answer follow‑ups to avoid confusion. I only answer questions related to the players in the database. Please write a deterministic question that can be answered from the database columns and rows.\n"
+        "- If result.type is \"unknown_player\", respond with: Your question is not deterministic, I do not answer follow‑ups to avoid confusion. I only answer questions related to the players in the database. Please write a deterministic question that can be answered from the database columns and rows.\n"
+        "- If result.type is \"unsupported_value\", respond with: Your question is not deterministic, I do not answer follow‑ups to avoid confusion. I only answer questions related to the players in the database. Please write a deterministic question that can be answered from the database columns and rows.\n"
+
 
     )
 
